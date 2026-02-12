@@ -138,6 +138,31 @@ Server runs on `http://localhost:3000` by default. Port is configurable via `POR
 
 ## API Endpoints
 
+### `GET /exam`
+
+Returns all active exams as lightweight summaries (no questions). Sorted by creation date (newest first). Used by the frontend for the exam listing/selection page.
+
+**Example:** `GET /exam`
+
+**Response:**
+
+```json
+[
+  {
+    "id": "clx...",
+    "code": "DEMO-001",
+    "title": "Demo JavaScript Fundamentals Exam",
+    "description": "A short demo exam...",
+    "durationMins": 30,
+    "totalMarks": 3,
+    "totalQuestions": 3,
+    "createdAt": "2026-02-13T00:00:00.000Z"
+  }
+]
+```
+
+---
+
 ### `GET /exam/:code`
 
 Returns exam metadata + questions ordered by `order` field. **Never returns `correctOption`.**

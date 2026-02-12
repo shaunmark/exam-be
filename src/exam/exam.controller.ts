@@ -13,11 +13,23 @@
  */
 import { Controller, Get, Param } from '@nestjs/common';
 import { ExamService } from './exam.service.js';
-import { ExamResponseDto } from './dto/exam-response.dto.js';
+import { ExamListItemDto, ExamResponseDto } from './dto/exam-response.dto.js';
 
 @Controller('exam')
 export class ExamController {
   constructor(private readonly examService: ExamService) {}
+
+  /**
+   * GET /exam
+   *
+   * Returns all active exams as lightweight summaries (no questions).
+   * Used by the frontend to render the exam listing/selection page.
+   * Sorted by creation date (newest first).
+   */
+  @Get()
+  async getAllExams(): Promise<ExamListItemDto[]> {
+    return this.examService.getAllExams();
+  }
 
   /**
    * GET /exam/:code

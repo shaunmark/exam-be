@@ -7,11 +7,48 @@
  */
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { ExamResponseDto, QuestionOptionDto } from './dto/exam-response.dto.js';
+import { ExamListItemDto, ExamResponseDto, QuestionOptionDto } from './dto/exam-response.dto.js';
 
 @Injectable()
 export class ExamService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Fetches all active exams for the listing page.
+   *
+   * Returns lightweight summaries (no questions) sorted by creation date (newest first).
+   * Uses Prisma `_count` to get totalQuestions without fetching all question rows.
+   */
+  async getAllExams(): Promise<ExamListItemDto[]> {
+    const exams = await this.prisma.exam.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        code: true,
+        title: true,
+        description: true,
+        durationMins: true,
+        totalMarks: true,
+        createdAt: true,
+        _count: { select: { questions: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return exams.map(
+      (exam) =>
+        new ExamListItemDto({
+          id: exam.id,
+          code: exam.code,
+          title: exam.title,
+          description: exam.description,
+          durationMins: exam.durationMins,
+          totalMarks: exam.totalMarks,
+          totalQuestions: exam._count.questions,
+          createdAt: exam.createdAt,
+        }),
+    );
+  }
 
   /**
    * Fetches an exam by its unique code, including all questions.

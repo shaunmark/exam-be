@@ -44,6 +44,28 @@ export class QuestionOptionDto {
 }
 
 /**
+ * Lightweight DTO for the GET /exam listing endpoint.
+ *
+ * Returns exam summary info for UI cards/lists — no questions included.
+ * `totalQuestions` is included so the UI can show "X questions" without
+ * fetching the full exam detail.
+ */
+export class ExamListItemDto {
+  id!: string;
+  code!: string;
+  title!: string;
+  description!: string | null;
+  durationMins!: number;
+  totalMarks!: number;
+  totalQuestions!: number;
+  createdAt!: Date;
+
+  constructor(partial: ExamListItemDto) {
+    Object.assign(this, partial);
+  }
+}
+
+/**
  * Top-level response DTO for GET /exam/:code.
  *
  * Contains exam metadata + an array of questions (without correct answers).
