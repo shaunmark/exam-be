@@ -43,7 +43,11 @@ src/
 │   ├── attempt.controller.ts        # POST /attempt/start, POST /attempt/submit
 │   ├── attempt.service.ts           # Core business logic: start, score, submit
 │   └── attempt.module.ts
-├── app.module.ts                    # Root module wiring Prisma, Exam, Attempt
+├── upload/                          # Excel upload module
+│   ├── upload.controller.ts         # POST /upload/excel
+│   ├── upload.service.ts            # Excel parsing, validation, DB population
+│   └── upload.module.ts
+├── app.module.ts                    # Root module wiring Prisma, Exam, Attempt, Upload
 ├── app.controller.ts                # Health check (GET /)
 ├── app.service.ts
 └── main.ts                          # Bootstrap: ValidationPipe, CORS, port
@@ -52,6 +56,8 @@ prisma/
 └── seed.ts                          # Seeds 1 exam + 3 questions
 prisma.config.ts                     # Prisma 7 config: loads .env, provides datasource URL
 .env.example                         # Template for DATABASE_URL
+scripts/
+└── generate-template.ts             # Generates a sample exam-template.xlsx
 ```
 
 ## Database Schema
@@ -238,6 +244,73 @@ Submits answers, calculates score, and persists everything atomically.
 - `404` — Attempt not found
 - `409` — Attempt already submitted
 - `400` — Time expired (auto-marked as `TIMED_OUT`), or question doesn't belong to exam
+
+### `POST /upload/excel`
+
+Uploads an Excel (`.xlsx`) workbook to bulk-import exams and questions into the database.
+
+Send as **multipart/form-data** with a single file field named `file` (max 10 MB).
+
+The workbook must contain **two sheets**:
+
+**Sheet 1 — "Exams"** (header row + data rows):
+
+| Column | Required | Default |
+|---|---|---|
+| `code` | Yes | — |
+| `title` | Yes | — |
+| `description` | No | `null` |
+| `durationMins` | Yes | — |
+| `isActive` | No | `true` |
+
+**Sheet 2 — "Questions"** (header row + data rows):
+
+| Column | Required | Default |
+|---|---|---|
+| `examCode` | Yes | — |
+| `text` | Yes | — |
+| `optionA` | Yes | — |
+| `optionB` | Yes | — |
+| `optionC` | Yes | — |
+| `optionD` | Yes | — |
+| `correctOption` | Yes (A/B/C/D) | — |
+| `order` | No | Auto-incremented per exam |
+| `marks` | No | `1` |
+
+- `totalMarks` on each exam is **auto-computed** from the sum of its question marks.
+- All inserts are wrapped in a **single transaction** — if any row fails, nothing is committed.
+
+**Example (curl):**
+
+```bash
+curl -X POST http://localhost:3000/upload/excel -F "file=@scripts/exam-template.xlsx"
+```
+
+**Response:**
+
+```json
+{
+  "message": "Excel data imported successfully.",
+  "examsCreated": 2,
+  "details": [
+    { "code": "JS-101", "id": "clx...", "questionCount": 2 },
+    { "code": "PY-201", "id": "clx...", "questionCount": 2 }
+  ]
+}
+```
+
+**Errors:**
+- `400` — No file uploaded, wrong file type, missing/invalid required fields, orphaned questions, or duplicate exam codes
+
+**Generating a sample template:**
+
+```bash
+npx ts-node scripts/generate-template.ts
+```
+
+This creates `scripts/exam-template.xlsx` pre-filled with sample data you can modify and upload.
+
+---
 
 ## Key Design Decisions
 
