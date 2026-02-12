@@ -1,44 +1,81 @@
 # Exam Platform Backend (MVP)
 
-Production-ready MVP backend for an online exam-taking platform.
+Production-ready MVP backend for an online exam-taking platform built with clean architecture principles.
+
+## Business Constraints
+
+- **Single-choice questions only** — Exactly 4 options (A/B/C/D), one correct answer per question
+- **Strictly timed exams** — Cannot be paused; `endsAt` is calculated at start
+- **One attempt per user per exam** — Enforced at both application and database level
+- **One submission per attempt** — Only `IN_PROGRESS` attempts can be submitted
+- **Answers saved only at submission** — No intermediate saves
+- **No negative marking** — Score is sum of correct answer marks only
+- **No authentication** — `userId` is passed manually in request body
+- **No sections, analytics, or match-the-following**
 
 ## Tech Stack
 
 - **NestJS 11** — Framework
-- **Prisma 7** — ORM
+- **Prisma 7** — ORM with `@prisma/adapter-neon` for serverless PostgreSQL
 - **PostgreSQL (Neon)** — Database
-- **TypeScript** — Strict mode enabled
+- **TypeScript** — Strict mode enabled (`"strict": true` in tsconfig)
+- **class-validator / class-transformer** — Request validation and DTO transformation
+- **dotenv** — Environment variable loading for `prisma.config.ts`
 
 ## Project Structure
 
 ```
 src/
-├── prisma/              # Global Prisma module & service
-│   ├── prisma.module.ts
-│   ├── prisma.service.ts
-│   └── index.ts
-├── exam/                # Exam module (read-only)
+├── prisma/                          # Global Prisma module & service
+│   ├── prisma.module.ts             # @Global() module — available to all modules
+│   ├── prisma.service.ts            # Extends PrismaClient with Neon adapter
+│   └── index.ts                     # Barrel exports
+├── exam/                            # Exam module (read-only)
 │   ├── dto/
-│   │   └── exam-response.dto.ts
-│   ├── exam.controller.ts
-│   ├── exam.service.ts
+│   │   └── exam-response.dto.ts     # ExamResponseDto, QuestionOptionDto
+│   ├── exam.controller.ts           # GET /exam/:code
+│   ├── exam.service.ts              # Fetches exam + questions, maps to DTO
 │   └── exam.module.ts
-├── attempt/             # Attempt module (start + submit)
+├── attempt/                         # Attempt module (start + submit)
 │   ├── dto/
-│   │   ├── start-attempt.dto.ts
-│   │   └── submit-attempt.dto.ts
-│   ├── attempt.controller.ts
-│   ├── attempt.service.ts
+│   │   ├── start-attempt.dto.ts     # StartAttemptDto, StartAttemptResponseDto
+│   │   └── submit-attempt.dto.ts    # SubmitAttemptDto, AnswerDto, SubmitAttemptResponseDto
+│   ├── attempt.controller.ts        # POST /attempt/start, POST /attempt/submit
+│   ├── attempt.service.ts           # Core business logic: start, score, submit
 │   └── attempt.module.ts
-├── app.module.ts
-├── app.controller.ts
+├── app.module.ts                    # Root module wiring Prisma, Exam, Attempt
+├── app.controller.ts                # Health check (GET /)
 ├── app.service.ts
-└── main.ts
+└── main.ts                          # Bootstrap: ValidationPipe, CORS, port
 prisma/
-├── schema.prisma
-└── seed.ts
-prisma.config.ts         # Prisma 7 migration config
+├── schema.prisma                    # 4 models: Exam, Question, ExamAttempt, AttemptAnswer
+└── seed.ts                          # Seeds 1 exam + 3 questions
+prisma.config.ts                     # Prisma 7 config: loads .env, provides datasource URL
+.env.example                         # Template for DATABASE_URL
 ```
+
+## Database Schema
+
+### Models
+
+- **Exam** — `id`, `code` (unique), `title`, `description?`, `durationMins`, `totalMarks`, `isActive`, `createdAt`, `updatedAt`
+- **Question** — `id`, `examId`, `text`, `optionA`–`optionD`, `correctOption` (A/B/C/D), `order`, `marks` (default 1)
+- **ExamAttempt** — `id`, `userId`, `examId`, `status` (IN_PROGRESS/SUBMITTED/TIMED_OUT), `score?`, `startedAt`, `endsAt`, `submittedAt?`
+- **AttemptAnswer** — `id`, `attemptId`, `questionId`, `selectedOption`, `isMarkedForReview`, `isCorrect`
+
+### Key Indexes & Constraints
+
+| Constraint | Table | Purpose |
+|---|---|---|
+| `@@unique([userId, examId])` | ExamAttempt | One attempt per user per exam |
+| `@@unique([examId, order])` | Question | No duplicate question ordering |
+| `@@unique([attemptId, questionId])` | AttemptAnswer | No duplicate answers per question |
+| `@@index([code])` | Exam | Fast lookup by exam code |
+| `@@index([examId])` | Question | Fast question fetch per exam |
+| `@@index([userId, examId])` | ExamAttempt | Fast attempt lookup |
+| `@@index([status])` | ExamAttempt | Filter by attempt status |
+| `@@index([attemptId])` | AttemptAnswer | Fast answer fetch per attempt |
+| `onDelete: Cascade` | All relations | Automatic cleanup of child records |
 
 ## Setup Instructions
 
@@ -60,19 +97,21 @@ cp .env.example .env
 DATABASE_URL="postgresql://user:password@host.neon.tech/dbname?sslmode=require"
 ```
 
-### 3. Run database migration
-
-```bash
-npx prisma migrate dev --name init
-```
-
-### 4. Generate Prisma client
+### 3. Generate Prisma client
 
 ```bash
 npx prisma generate
 ```
 
+### 4. Run database migration
+
+```bash
+npx prisma migrate dev --name init
+```
+
 ### 5. Seed the database
+
+Creates 1 exam (`DEMO-001`) with 3 JavaScript questions.
 
 ```bash
 npx prisma db seed
@@ -89,19 +128,52 @@ yarn build
 yarn start:prod
 ```
 
-Server runs on `http://localhost:3000` by default.
+Server runs on `http://localhost:3000` by default. Port is configurable via `PORT` env var.
 
 ## API Endpoints
 
 ### `GET /exam/:code`
 
-Returns exam metadata + questions (without correct answers).
+Returns exam metadata + questions ordered by `order` field. **Never returns `correctOption`.**
 
 **Example:** `GET /exam/DEMO-001`
 
+**Response:**
+
+```json
+{
+  "id": "clx...",
+  "code": "DEMO-001",
+  "title": "Demo JavaScript Fundamentals Exam",
+  "description": "A short demo exam...",
+  "durationMins": 30,
+  "totalMarks": 3,
+  "totalQuestions": 3,
+  "questions": [
+    {
+      "id": "clx...",
+      "text": "Which keyword is used to declare a constant in JavaScript?",
+      "optionA": "var",
+      "optionB": "let",
+      "optionC": "const",
+      "optionD": "static",
+      "order": 1,
+      "marks": 1
+    }
+  ]
+}
+```
+
+**Errors:**
+- `404` — Exam not found or inactive
+
+---
+
 ### `POST /attempt/start`
 
-Starts an exam attempt.
+Creates a new exam attempt. Calculates `endsAt = now + durationMins`.
+
+**Request:**
 
 ```json
 {
@@ -110,11 +182,27 @@ Starts an exam attempt.
 }
 ```
 
-**Returns:** `attemptId`, `startedAt`, `endsAt`
+**Response:**
+
+```json
+{
+  "attemptId": "clx...",
+  "startedAt": "2026-02-13T00:00:00.000Z",
+  "endsAt": "2026-02-13T00:30:00.000Z"
+}
+```
+
+**Errors:**
+- `404` — Exam not found or inactive
+- `409` — User already has an active or completed attempt for this exam
+
+---
 
 ### `POST /attempt/submit`
 
-Submits answers for an attempt.
+Submits answers, calculates score, and persists everything atomically.
+
+**Request:**
 
 ```json
 {
@@ -127,36 +215,65 @@ Submits answers for an attempt.
 }
 ```
 
-**Returns:** `attemptId`, `score`, `totalMarks`, `totalQuestions`, `answeredQuestions`, `correctAnswers`, `submittedAt`
+- `selectedOption` must be one of `A`, `B`, `C`, `D`
+- `isMarkedForReview` is optional (defaults to `false`)
+- Partial submissions are allowed (not all questions need answers)
+- Duplicate `questionId` entries are deduplicated (first one wins)
+
+**Response:**
+
+```json
+{
+  "attemptId": "clx...",
+  "score": 2,
+  "totalMarks": 3,
+  "totalQuestions": 3,
+  "answeredQuestions": 3,
+  "correctAnswers": 2,
+  "submittedAt": "2026-02-13T00:15:00.000Z"
+}
+```
+
+**Errors:**
+- `404` — Attempt not found
+- `409` — Attempt already submitted
+- `400` — Time expired (auto-marked as `TIMED_OUT`), or question doesn't belong to exam
 
 ## Key Design Decisions
 
-### Schema Improvements
+### Schema Improvements Over Naive Approach
 
-- **`@@unique([userId, examId])`** on `ExamAttempt` — Prevents duplicate attempts at the DB level (one attempt per user per exam)
-- **`@@unique([examId, order])`** on `Question` — Guarantees question ordering integrity
-- **`@@unique([attemptId, questionId])`** on `AttemptAnswer` — Prevents duplicate answers at the DB level
-- **`isCorrect` stored on `AttemptAnswer`** — Avoids recomputation; score is deterministic at submission time
-- **`TIMED_OUT` status** — Distinguishes clean submissions from expired attempts
-- **`isActive` on Exam** — Soft-disable exams without deletion
-- **`marks` per question** — Supports variable marks per question (defaults to 1)
-- **Cascade deletes** — Cleaning up related data when parent is deleted
+- **`isCorrect` stored on `AttemptAnswer`** — Score is computed once at submission and persisted. No need to re-join questions to recalculate. Deterministic and auditable.
+- **`TIMED_OUT` enum value** — Distinguishes clean submissions from expired attempts. Submissions within a 5-second grace period are accepted but marked `TIMED_OUT` if past deadline.
+- **`isActive` on Exam** — Soft-disable exams without deletion. The `GET /exam/:code` and `POST /attempt/start` endpoints both filter by `isActive: true`.
+- **`marks` per question** — Supports variable marks per question (defaults to 1) without schema changes later.
+- **Cascade deletes** — All child records are cleaned up automatically when a parent is deleted.
 
 ### Performance & Safety
 
-- **No N+1 queries** — All questions fetched in a single query, scored via in-memory Map lookup
-- **Batch insert** — `createMany` for answers instead of per-answer inserts
-- **Prisma transaction** — Answers + attempt update are atomic; no partial state
-- **Grace period** — 5-second tolerance on submission deadline for network latency
-- **Duplicate answer dedup** — First answer per question wins; duplicates silently skipped
-- **Friendly conflict errors** — Check before insert to avoid raw DB constraint errors
-- **`select` projections** — Only fetch needed fields; `correctOption` never returned to client
-- **Global ValidationPipe** — Whitelist + transform + forbidNonWhitelisted strips unknown fields
+- **No N+1 queries** — All questions fetched in a single `findMany`, then scored via an in-memory `Map` for O(1) lookup per answer.
+- **Batch insert** — `createMany` inserts all answers in one DB call instead of looping.
+- **Prisma `$transaction`** — Answer insertion + attempt status update are atomic. If either fails, neither is persisted. No partial state.
+- **5-second grace period** — Submissions arriving slightly after `endsAt` (due to network latency) are still accepted but marked `TIMED_OUT`.
+- **Duplicate answer dedup** — If the client sends two answers for the same question, the first one wins. No DB constraint error.
+- **Friendly conflict errors** — The service checks for existing attempts before `create` to return a clear `409 Conflict` instead of a raw Prisma unique constraint error.
+- **`select` projections** — Every Prisma query uses `select` to fetch only needed fields. `correctOption` is **never** returned to the client in the exam endpoint.
+- **Global `ValidationPipe`** — Configured with `whitelist: true`, `forbidNonWhitelisted: true`, and `transform: true`. Unknown fields are stripped, invalid payloads are rejected with clear error messages.
 
 ### Architecture
 
-- **Global PrismaModule** — Single shared DB connection across all modules
-- **Thin controllers** — All business logic in services
-- **Response DTOs** — DB shape never leaked to client
-- **Input DTOs** — class-validator decorators with strict typing
-- **`selectedOption` validated** — Only A/B/C/D accepted via `@IsIn`
+- **Global `PrismaModule`** — Decorated with `@Global()` so all modules share a single DB connection without re-importing.
+- **`PrismaService` extends `PrismaClient`** — Uses `@prisma/adapter-neon` (`PrismaNeon`) for serverless-compatible connections to Neon PostgreSQL. Implements `OnModuleInit`/`OnModuleDestroy` for proper connection lifecycle.
+- **Thin controllers** — Controllers only handle HTTP concerns (decorators, param extraction). All business logic lives in services.
+- **Response DTOs** — Database model shape is never leaked to the client. Every response is mapped through a typed DTO class.
+- **Input DTOs with `class-validator`** — All request bodies are validated with decorators (`@IsString`, `@IsNotEmpty`, `@IsIn`, `@ValidateNested`, `@ArrayMinSize`, etc.). No `any` types.
+- **CORS enabled** — `app.enableCors()` in `main.ts` for Next.js frontend integration.
+- **`prisma.config.ts`** — Prisma 7 requires a config file for migrations. Uses `dotenv` to explicitly load `.env` since Prisma 7 does not auto-load it.
+
+### Seed Data
+
+The seed script (`prisma/seed.ts`) creates:
+
+- **1 exam** — Code: `DEMO-001`, Duration: 30 mins, 3 total marks
+- **3 questions** — JavaScript fundamentals (const keyword, typeof null, Array.map)
+- Correct answers: Q1=C, Q2=D, Q3=B
