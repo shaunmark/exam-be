@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  TIMED_OUT
+}
+
+model Exam {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  title         String
+  description   String?
+  durationMins  Int
+  totalMarks    Int
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  questions Question[]
+  attempts  ExamAttempt[]
+
+  @@index([code])
+}
+
+model Question {
+  id            String @id @default(cuid())
+  examId        String
+  text          String
+  optionA       String
+  optionB       String
+  optionC       String
+  optionD       String
+  correctOption String // A | B | C | D
+  order         Int
+  marks         Int    @default(1)
+
+  exam    Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
+  answers AttemptAnswer[]
+
+  @@unique([examId, order])
+  @@index([examId])
+}
+
+model ExamAttempt {
+  id          String        @id @default(cuid())
+  userId      String
+  examId      String
+  status      AttemptStatus @default(IN_PROGRESS)
+  score       Int?
+  startedAt   DateTime      @default(now())
+  endsAt      DateTime
+  submittedAt DateTime?
+
+  exam    Exam            @relation(fields: [examId], references: [id], onDelete: Cascade)
+  answers AttemptAnswer[]
+
+  @@unique([userId, examId])
+  @@index([userId, examId])
+  @@index([status])
+}
+
+model AttemptAnswer {
+  id               String  @id @default(cuid())
+  attemptId        String
+  questionId       String
+  selectedOption   String // A | B | C | D
+  isMarkedForReview Boolean @default(false)
+  isCorrect        Boolean
+
+  attempt  ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+}
