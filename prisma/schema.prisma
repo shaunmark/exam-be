@@ -1,82 +1,177 @@
+// =============================================================================
+// Prisma Schema — Exam Platform MVP
+//
+// This schema defines 4 models for the exam-taking platform:
+// 1. Exam           — The exam itself (metadata + settings)
+// 2. Question       — Individual questions belonging to an exam
+// 3. ExamAttempt    — A user's attempt at taking an exam
+// 4. AttemptAnswer  — Individual answers submitted by a user
+//
+// Key design decisions:
+// - cuid() IDs: Collision-resistant, URL-safe, sortable unique IDs.
+// - Cascade deletes: Deleting an exam removes all its questions, attempts, and answers.
+// - Composite unique constraints: Enforce business rules at the DB level.
+// - Indexes on foreign keys: Optimize JOIN and WHERE queries.
+//
+// NOTE: In Prisma 7, the `url` property is NOT in the datasource block.
+// The connection URL is provided via prisma.config.ts instead.
+// =============================================================================
+
+// Generator: Tells Prisma to generate the TypeScript client library.
+// This is what gives us typed methods like prisma.exam.findUnique(), etc.
 generator client {
   provider = "prisma-client-js"
 }
 
+// Datasource: Specifies PostgreSQL as the database provider.
+// The actual connection URL is configured in prisma.config.ts (Prisma 7 pattern).
+// DO NOT add `url` here — it was removed in Prisma 7.
 datasource db {
   provider = "postgresql"
 }
 
+// =============================================================================
+// Enum: AttemptStatus
+//
+// Represents the lifecycle of an exam attempt:
+// - IN_PROGRESS → Student has started but not yet submitted
+// - SUBMITTED   → Student submitted within the time limit
+// - TIMED_OUT   → Student submitted after the deadline (within grace period)
+//                  OR the attempt was auto-expired past the grace period
+// =============================================================================
 enum AttemptStatus {
   IN_PROGRESS
   SUBMITTED
   TIMED_OUT
 }
 
+// =============================================================================
+// Model: Exam
+//
+// Represents an exam that students can take.
+// Each exam has a unique `code` (e.g., "DEMO-001") used in the URL.
+// Exams can be soft-disabled via `isActive` without deleting data.
+// =============================================================================
 model Exam {
-  id            String   @id @default(cuid())
-  code          String   @unique
-  title         String
-  description   String?
-  durationMins  Int
-  totalMarks    Int
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id            String   @id @default(cuid())   // Unique identifier
+  code          String   @unique                 // URL-friendly code (e.g., "DEMO-001")
+  title         String                           // Display title
+  description   String?                          // Optional description (nullable)
+  durationMins  Int                              // Exam duration in minutes (used to calculate endsAt)
+  totalMarks    Int                              // Sum of all question marks (denormalized for quick access)
+  isActive      Boolean  @default(true)          // Soft-delete flag. Inactive exams return 404.
+  createdAt     DateTime @default(now())         // Auto-set on creation
+  updatedAt     DateTime @updatedAt              // Auto-updated on any change
 
-  questions Question[]
-  attempts  ExamAttempt[]
+  // Relations
+  questions Question[]      // One exam has many questions
+  attempts  ExamAttempt[]   // One exam has many attempts (from different users)
 
+  // Index on `code` for fast lookups in GET /exam/:code.
+  // Note: @unique already creates an index, but this is explicit for clarity.
   @@index([code])
 }
 
+// =============================================================================
+// Model: Question
+//
+// Represents a single-choice question with exactly 4 options (A/B/C/D).
+// Each question belongs to one exam and has a display order.
+//
+// SECURITY NOTE: `correctOption` is stored here but NEVER returned to the client
+// in the GET /exam/:code endpoint. It's only used server-side for scoring.
+// =============================================================================
 model Question {
   id            String @id @default(cuid())
-  examId        String
-  text          String
-  optionA       String
-  optionB       String
-  optionC       String
-  optionD       String
-  correctOption String // A | B | C | D
-  order         Int
-  marks         Int    @default(1)
+  examId        String                     // FK to Exam
+  text          String                     // The question text
+  optionA       String                     // Option A text
+  optionB       String                     // Option B text
+  optionC       String                     // Option C text
+  optionD       String                     // Option D text
+  correctOption String // A | B | C | D    // The correct answer (NEVER sent to client)
+  order         Int                        // Display order (1-based, ascending)
+  marks         Int    @default(1)         // Points for correct answer (supports variable marks)
 
+  // Relations
   exam    Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
-  answers AttemptAnswer[]
+  answers AttemptAnswer[] // Answers submitted for this question across all attempts
 
+  // Composite unique: No two questions in the same exam can have the same order.
+  // This prevents ordering conflicts and ensures consistent display.
   @@unique([examId, order])
+
+  // Index on examId for fast question fetching per exam (used in both GET /exam/:code and submit).
   @@index([examId])
 }
 
+// =============================================================================
+// Model: ExamAttempt
+//
+// Represents a user's attempt at taking an exam.
+// Each user can only have ONE attempt per exam (enforced by @@unique([userId, examId])).
+//
+// Lifecycle:
+// 1. Created with status=IN_PROGRESS when POST /attempt/start is called
+// 2. Updated to SUBMITTED or TIMED_OUT when POST /attempt/submit is called
+//
+// `score` is nullable because it's only set after submission.
+// `submittedAt` is nullable because IN_PROGRESS attempts haven't been submitted yet.
+// =============================================================================
 model ExamAttempt {
   id          String        @id @default(cuid())
-  userId      String
-  examId      String
-  status      AttemptStatus @default(IN_PROGRESS)
-  score       Int?
-  startedAt   DateTime      @default(now())
-  endsAt      DateTime
-  submittedAt DateTime?
+  userId      String                              // User ID (no auth — passed manually in MVP)
+  examId      String                              // FK to Exam
+  status      AttemptStatus @default(IN_PROGRESS) // Current lifecycle state
+  score       Int?                                // Total score (null until submitted)
+  startedAt   DateTime      @default(now())       // When the attempt was created
+  endsAt      DateTime                            // Deadline: startedAt + durationMins
+  submittedAt DateTime?                           // When answers were submitted (null if not yet)
 
+  // Relations
   exam    Exam            @relation(fields: [examId], references: [id], onDelete: Cascade)
-  answers AttemptAnswer[]
+  answers AttemptAnswer[] // Answers submitted in this attempt
 
+  // CRITICAL: One attempt per user per exam. This is the primary business rule.
+  // Enforced at the DB level to prevent race conditions (two concurrent start requests).
+  // The service also checks this before insert to give a friendly error message.
   @@unique([userId, examId])
+
+  // Composite index for fast lookup when checking existing attempts.
   @@index([userId, examId])
+
+  // Index on status for potential future queries (e.g., "find all timed-out attempts").
   @@index([status])
 }
 
+// =============================================================================
+// Model: AttemptAnswer
+//
+// Represents a single answer submitted by a user for a specific question.
+// Created in bulk during POST /attempt/submit via createMany().
+//
+// `isCorrect` is computed at submission time and stored — this avoids
+// needing to re-join with Question to recalculate scores later.
+//
+// `isMarkedForReview` is a UI feature flag — the student can mark questions
+// for review during the exam. It does NOT affect scoring.
+// =============================================================================
 model AttemptAnswer {
   id               String  @id @default(cuid())
-  attemptId        String
-  questionId       String
-  selectedOption   String // A | B | C | D
-  isMarkedForReview Boolean @default(false)
-  isCorrect        Boolean
+  attemptId        String                        // FK to ExamAttempt
+  questionId       String                        // FK to Question
+  selectedOption   String // A | B | C | D       // The option the student chose
+  isMarkedForReview Boolean @default(false)       // UI flag — does not affect score
+  isCorrect        Boolean                       // Computed at submission: selectedOption === correctOption
 
+  // Relations (both cascade — deleting attempt or question cleans up answers)
   attempt  ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   question Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
+  // One answer per question per attempt. Prevents duplicate submissions.
+  // The service also deduplicates in-memory before insert to avoid constraint errors.
   @@unique([attemptId, questionId])
+
+  // Index on attemptId for fast answer retrieval per attempt.
   @@index([attemptId])
 }
