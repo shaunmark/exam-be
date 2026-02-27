@@ -1418,7 +1418,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@neondatabase/serverless@npm:>0.6.0 <2, @neondatabase/serverless@npm:^1.0.2":
+"@neondatabase/serverless@npm:>0.6.0 <2":
   version: 1.0.2
   resolution: "@neondatabase/serverless@npm:1.0.2"
   dependencies:
@@ -4246,7 +4246,6 @@ __metadata:
   dependencies:
     "@eslint/eslintrc": "npm:^3.2.0"
     "@eslint/js": "npm:^9.18.0"
-    "@neondatabase/serverless": "npm:^1.0.2"
     "@nestjs/cli": "npm:^11.0.0"
     "@nestjs/common": "npm:^11.0.1"
     "@nestjs/core": "npm:^11.0.1"

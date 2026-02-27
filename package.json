@@ -23,11 +23,7 @@
     "prisma:seed": "npx prisma db seed",
     "prisma:studio": "npx prisma studio"
   },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
-  },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.2",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",

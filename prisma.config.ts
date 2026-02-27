@@ -36,4 +36,11 @@ export default defineConfig({
   datasource: {
     url: process.env.DATABASE_URL!,
   },
+  /**
+   * Migration configuration with seed script.
+   * The seed will automatically run after migrations complete.
+   */
+  migrations: {
+    seed: 'ts-node ./prisma/seed.ts',
+  },
 });
