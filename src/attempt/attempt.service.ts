@@ -308,11 +308,12 @@ export class AttemptService {
     /**
      * Pre-typed array for the batch insert.
      * Each element matches the AttemptAnswer model's required fields.
+     * selectedOption can be null for unanswered questions.
      */
     const answersToCreate: Array<{
       attemptId: string;
       questionId: string;
-      selectedOption: string;
+      selectedOption: string | null;
       isMarkedForReview: boolean;
       isCorrect: boolean;
     }> = [];
@@ -342,11 +343,16 @@ export class AttemptService {
       }
 
       /**
-       * Score calculation: Simple string comparison.
-       * selectedOption and correctOption are both "A", "B", "C", or "D".
-       * No partial credit, no negative marking — just full marks or zero.
+       * Score calculation: Handle unanswered questions.
+       * 
+       * - If selectedOption is null/undefined, question is unanswered → incorrect (0 marks)
+       * - If selectedOption is provided, compare with correctOption
+       * - No partial credit, no negative marking — just full marks or zero
        */
-      const isCorrect = answer.selectedOption === question.correctOption;
+      const isCorrect = answer.selectedOption 
+        ? answer.selectedOption === question.correctOption 
+        : false;
+      
       if (isCorrect) {
         score += question.marks;
         correctAnswers++;
@@ -356,11 +362,12 @@ export class AttemptService {
        * Build the answer record for batch insert.
        * `isMarkedForReview` defaults to false if not provided by the client.
        * `isCorrect` is computed and stored — avoids recomputation later.
+       * `selectedOption` can be null for unanswered questions.
        */
       answersToCreate.push({
         attemptId: attempt.id,
         questionId: answer.questionId,
-        selectedOption: answer.selectedOption,
+        selectedOption: answer.selectedOption ?? null,
         isMarkedForReview: answer.isMarkedForReview ?? false,
         isCorrect,
       });

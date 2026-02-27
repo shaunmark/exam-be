@@ -7,7 +7,7 @@
  */
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { ExamListItemDto, ExamResponseDto, QuestionOptionDto } from './dto/exam-response.dto.js';
+import { ExamListItemDto, ExamMetaDto, ExamResponseDto, QuestionOptionDto } from './dto/exam-response.dto.js';
 
 @Injectable()
 export class ExamService {
@@ -150,6 +150,45 @@ export class ExamService {
             marks: q.marks,
           }),
       ),
+    });
+  }
+
+  /**
+   * Fetches exam metadata only (no questions) by its unique code.
+   *
+   * Key behaviors:
+   * 1. Only returns ACTIVE exams (isActive: true). Inactive exams return 404.
+   * 2. Uses Prisma `select` to fetch ONLY the meta fields needed.
+   * 3. Uses Prisma `_count` to get totalQuestions without fetching all question rows.
+   *
+   * @param code - The unique exam code (e.g., "DEMO-001")
+   * @returns ExamMetaDto with exam metadata only
+   * @throws NotFoundException if exam doesn't exist or is inactive
+   */
+  async getExamMetaByCode(code: string): Promise<ExamMetaDto> {
+    const exam = await this.prisma.exam.findUnique({
+      where: { code, isActive: true },
+      select: {
+        id: true,
+        code: true,
+        title: true,
+        description: true,
+        durationMins: true,
+        _count: { select: { questions: true } },
+      },
+    });
+
+    if (!exam) {
+      throw new NotFoundException(`Exam with code "${code}" not found`);
+    }
+
+    return new ExamMetaDto({
+      id: exam.id,
+      code: exam.code,
+      title: exam.title,
+      description: exam.description,
+      durationMins: exam.durationMins,
+      totalQuestions: exam._count.questions,
     });
   }
 }

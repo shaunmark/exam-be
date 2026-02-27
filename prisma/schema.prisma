@@ -160,7 +160,7 @@ model AttemptAnswer {
   id               String  @id @default(cuid())
   attemptId        String                        // FK to ExamAttempt
   questionId       String                        // FK to Question
-  selectedOption   String // A | B | C | D       // The option the student chose
+  selectedOption   String? // A | B | C | D | null (null = unanswered)
   isMarkedForReview Boolean @default(false)       // UI flag — does not affect score
   isCorrect        Boolean                       // Computed at submission: selectedOption === correctOption
 

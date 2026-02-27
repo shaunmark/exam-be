@@ -66,6 +66,23 @@ export class ExamListItemDto {
 }
 
 /**
+ * DTO for exam meta information - lightweight summary with only essential fields.
+ * Used for the GET /exam/:code/meta endpoint.
+ */
+export class ExamMetaDto {
+  id!: string;
+  code!: string;
+  title!: string;
+  description!: string | null;
+  durationMins!: number;
+  totalQuestions!: number;
+
+  constructor(partial: ExamMetaDto) {
+    Object.assign(this, partial);
+  }
+}
+
+/**
  * Top-level response DTO for GET /exam/:code.
  *
  * Contains exam metadata + an array of questions (without correct answers).

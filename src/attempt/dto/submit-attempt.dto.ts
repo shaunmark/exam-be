@@ -26,8 +26,9 @@ import { Type } from 'class-transformer';
 /**
  * Represents a single answer in the submission.
  *
- * Each answer maps a questionId to a selectedOption (A/B/C/D).
+ * Each answer maps a questionId to a selectedOption (A/B/C/D) or unanswered.
  * The client sends an array of these in the `answers` field.
+ * Unanswered questions can be included with null/undefined selectedOption.
  */
 export class AnswerDto {
   /** The ID of the question being answered. Must match a question in the exam. */
@@ -36,16 +37,16 @@ export class AnswerDto {
   questionId!: string;
 
   /**
-   * The selected option: must be exactly "A", "B", "C", or "D".
+   * The selected option: can be "A", "B", "C", "D", or null/undefined for unanswered questions.
    *
-   * @IsIn(['A', 'B', 'C', 'D']) ensures only valid options are accepted.
-   * Any other value (e.g., "E", "a", "AB") will be rejected with a 400 error.
-   * This matches the correctOption values stored in the Question model.
+   * @IsIn(['A', 'B', 'C', 'D']) ensures only valid options are accepted when provided.
+   * @IsOptional() allows null/undefined for unanswered questions.
+   * This enables students to submit attempts with some questions left unanswered.
    */
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   @IsIn(['A', 'B', 'C', 'D'])
-  selectedOption!: string;
+  selectedOption?: string;
 
   /**
    * Optional flag indicating the student marked this question for review.

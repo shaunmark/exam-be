@@ -13,7 +13,7 @@
  */
 import { Controller, Get, Param } from '@nestjs/common';
 import { ExamService } from './exam.service.js';
-import { ExamListItemDto, ExamResponseDto } from './dto/exam-response.dto.js';
+import { ExamListItemDto, ExamMetaDto, ExamResponseDto } from './dto/exam-response.dto.js';
 
 @Controller('exam')
 export class ExamController {
@@ -43,5 +43,19 @@ export class ExamController {
   @Get(':code')
   async getExam(@Param('code') code: string): Promise<ExamResponseDto> {
     return this.examService.getExamByCode(code);
+  }
+
+  /**
+   * GET /exam/:code/meta
+   *
+   * Retrieves exam metadata only (no questions) by exam code.
+   * The `code` param is extracted from the URL path (e.g., /exam/DEMO-001/meta).
+   *
+   * Returns: ExamMetaDto (exam meta info: id, code, title, description, durationMins, totalQuestions)
+   * Throws:  404 if exam not found or inactive
+   */
+  @Get(':code/meta')
+  async getExamMeta(@Param('code') code: string): Promise<ExamMetaDto> {
+    return this.examService.getExamMetaByCode(code);
   }
 }
