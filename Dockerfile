@@ -2,6 +2,9 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# Enable Corepack for Yarn Berry support
+RUN corepack enable
+
 # Copy package files
 COPY package.json yarn.lock ./
 
