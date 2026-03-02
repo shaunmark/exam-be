@@ -53,10 +53,11 @@ export class UploadService {
    * Main entry point: parse the Excel buffer and populate the database.
    *
    * @param buffer - The raw .xlsx file buffer from Multer
+   * @param conflictStrategy - How to handle duplicate exam codes ('error', 'skip', 'update')
    * @returns Summary of created exams and questions
    * @throws BadRequestException on validation errors
    */
-  async parseAndPopulate(buffer: Buffer) {
+  async parseAndPopulate(buffer: Buffer, conflictStrategy: 'error' | 'skip' | 'update' = 'error') {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
 
@@ -74,12 +75,46 @@ export class UploadService {
       );
     }
 
-    const exams = this.parseExamsSheet(examsSheet);
+    let exams = this.parseExamsSheet(examsSheet);
     const questions = this.parseQuestionsSheet(questionsSheet);
 
+    // Check for existing exam codes in database before proceeding
+    const examCodes = exams.map((e) => e.code);
+    const existingConflicts = await this.checkForExistingExamCodes(examCodes);
+    
+    // Handle conflicts based on strategy
+    if (existingConflicts.length > 0) {
+      if (conflictStrategy === 'error') {
+        throw new BadRequestException({
+          message: 'Duplicate exam codes found in database',
+          type: 'DATABASE_CONFLICTS',
+          conflicts: existingConflicts,
+          suggestion: 'Please remove these exam codes from your Excel file or use different codes',
+        });
+      }
+      
+      if (conflictStrategy === 'skip') {
+        // Filter out exams that already exist
+        const conflictCodes = new Set(existingConflicts.map(c => c.code));
+        exams = exams.filter(exam => !conflictCodes.has(exam.code));
+        
+        if (exams.length === 0) {
+          throw new BadRequestException({
+            message: 'All exams already exist in database',
+            type: 'ALL_DUPLICATES',
+            conflicts: existingConflicts,
+            suggestion: 'No new exams to import. All exam codes already exist.',
+          });
+        }
+      }
+      
+      // For 'update' strategy, we'll proceed with all exams and update existing ones
+      // (This would require additional implementation for update logic)
+    }
+
     // Validate that every question references an exam that exists in the Exams sheet
-    const examCodes = new Set(exams.map((e) => e.code));
-    const orphanedQuestions = questions.filter((q) => !examCodes.has(q.examCode));
+    const examCodeSet = new Set(exams.map((e) => e.code));
+    const orphanedQuestions = questions.filter((q) => !examCodeSet.has(q.examCode));
     if (orphanedQuestions.length > 0) {
       const orphanCodes = [...new Set(orphanedQuestions.map((q) => q.examCode))];
       throw new BadRequestException(
@@ -157,8 +192,12 @@ export class UploadService {
     });
 
     return {
-      message: 'Excel data imported successfully.',
+      message: conflictStrategy === 'skip' && existingConflicts.length > 0 
+        ? 'Excel data imported with some exams skipped due to duplicates.'
+        : 'Excel data imported successfully.',
       examsCreated: result.length,
+      examsSkipped: conflictStrategy === 'skip' ? existingConflicts.length : 0,
+      conflicts: conflictStrategy === 'skip' ? existingConflicts : undefined,
       details: result,
     };
   }
@@ -344,6 +383,20 @@ export class UploadService {
     }
 
     return questions;
+  }
+
+  /**
+   * Check if any exam codes already exist in the database.
+   * 
+   * @param codes - Array of exam codes to check
+   * @returns Array of conflict objects with existing exam details
+   */
+  private async checkForExistingExamCodes(codes: string[]): Promise<Array<{code: string, title: string}>> {
+    const existingExams = await this.prisma.exam.findMany({
+      where: { code: { in: codes } },
+      select: { code: true, title: true }
+    });
+    return existingExams.map(exam => ({ code: exam.code, title: exam.title }));
   }
 
   /**

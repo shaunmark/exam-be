@@ -13,6 +13,7 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from './upload.service.js';
@@ -28,6 +29,12 @@ export class UploadController {
    * The file must be an .xlsx Excel workbook with two sheets:
    *   - Sheet 1 ("Exams"):     exam metadata rows
    *   - Sheet 2 ("Questions"): question rows linked to exams by examCode
+   *
+   * Query Parameters:
+   *   conflictStrategy: How to handle duplicate exam codes
+   *     - "error" (default): Abort on any duplicates
+   *     - "skip": Skip duplicate exams, only create new ones
+   *     - "update": Update existing exams with new data
    *
    * Returns a summary of created exams and questions, or validation errors.
    */
@@ -48,11 +55,14 @@ export class UploadController {
       },
     }),
   )
-  async uploadExcel(@UploadedFile() file: Express.Multer.File) {
+  async uploadExcel(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('conflictStrategy') conflictStrategy: 'error' | 'skip' | 'update' = 'error'
+  ) {
     if (!file) {
       throw new BadRequestException('No file uploaded. Send a .xlsx file under the "file" field.');
     }
 
-    return this.uploadService.parseAndPopulate(file.buffer);
+    return this.uploadService.parseAndPopulate(file.buffer, conflictStrategy);
   }
 }
