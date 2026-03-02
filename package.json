@@ -21,7 +21,8 @@
     "prisma:generate": "npx prisma generate",
     "prisma:migrate": "npx prisma migrate dev",
     "prisma:seed": "npx prisma db seed",
-    "prisma:studio": "npx prisma studio"
+    "prisma:studio": "npx prisma studio",
+    "postinstall": "yarn prisma:generate"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

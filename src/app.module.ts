@@ -15,6 +15,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { ExamModule } from './exam/exam.module.js';
 import { AttemptModule } from './attempt/attempt.module.js';
 import { UploadModule } from './upload/upload.module.js';
+import { HealthModule } from './health/health.module.js';
 
 @Module({
   /**
@@ -22,7 +23,7 @@ import { UploadModule } from './upload/upload.module.js';
    * or AttemptModule — PrismaService is automatically available everywhere.
    * We import it here at the root so it's instantiated once at app startup.
    */
-  imports: [PrismaModule, ExamModule, AttemptModule, UploadModule],
+  imports: [PrismaModule, ExamModule, AttemptModule, UploadModule, HealthModule],
   controllers: [AppController],
   providers: [AppService],
 })
