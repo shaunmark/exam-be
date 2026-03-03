@@ -3,29 +3,27 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install Yarn
-RUN corepack enable
-
 # Install dependencies first (better caching)
 COPY package*.json ./
-COPY yarn.lock ./
-COPY .yarnrc.yml ./
 
-RUN yarn install
+# Clean up any Yarn PnP remnants
+RUN rm -f .pnp.cjs .pnp.loader.mjs
+
+RUN npm install
 
 # Copy rest of the code
 COPY . .
 
 # Generate Prisma client
 ARG DATABASE_URL
-RUN DATABASE_URL=$DATABASE_URL ./node_modules/.bin/prisma generate
+RUN DATABASE_URL=$DATABASE_URL npx prisma generate
 
 # Build NestJS
-RUN yarn build
+RUN npm run build
 
-# Check build output and show errors
-RUN ls -la dist/ || echo "No dist folder created"
-RUN test -f dist/main.js && echo "Build successful" || (echo "Build failed - running build again to see errors:" && yarn build)
+# Check build output
+RUN ls -la dist/ && echo "Dist contents:" || (echo "No dist folder created" && exit 1)
+RUN test -f dist/main.js && echo "Build successful - main.js found" || (echo "ERROR: dist/main.js not found" && exit 1)
 
 
 # ---------- Stage 2: Production ----------
@@ -33,14 +31,11 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install Yarn
-RUN corepack enable
-
 # Copy package files and install dependencies
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/yarn.lock ./
-COPY --from=builder /app/.yarnrc.yml ./
-RUN yarn install
+COPY --from=builder /app/package-lock.json ./
+
+RUN npm install --omit=dev
 
 # Copy built app and Prisma files
 COPY --from=builder /app/dist ./dist
