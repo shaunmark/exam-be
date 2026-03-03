@@ -7,7 +7,7 @@
  * - Configurable port via PORT env var (defaults to 3000)
  */
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module.js';
+import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as dotenv from 'dotenv';
 

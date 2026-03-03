@@ -19,7 +19,7 @@ ARG DATABASE_URL
 RUN DATABASE_URL=$DATABASE_URL npx prisma generate
 
 # Build NestJS
-RUN npm run build
+RUN echo "Starting build..." && npx nest build --verbose || (echo "Build failed with error:" && npx nest build 2>&1 && exit 1)
 
 # Check build output
 RUN ls -la dist/ && echo "Dist contents:" || (echo "No dist folder created" && exit 1)
@@ -48,4 +48,4 @@ RUN ls -la dist/ && test -f dist/main.js || (echo "dist/main.js not found after 
 EXPOSE 3000
 
 # Start app
-CMD ["node", "dist/main.js"]
+RUN npm run start
