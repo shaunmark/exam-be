@@ -33,4 +33,5 @@ COPY --from=builder /app/prisma ./prisma
 EXPOSE 3000
 
 # Start app
-CMD ["node", "dist/main.js"]
+# CMD ["node", "dist/main.js"]
+RUN npm run start:prod
