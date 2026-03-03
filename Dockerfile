@@ -1,27 +1,36 @@
-FROM node:18-alpine
+# ---------- Stage 1: Build ----------
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Enable Corepack for Yarn Berry support
-RUN corepack enable
+# Install dependencies first (better caching)
+COPY package*.json ./
 
-# Copy package files
-COPY package.json yarn.lock ./
+RUN npm install
 
-# Install dependencies
-RUN yarn install
-
-# Copy source code
+# Copy rest of the code
 COPY . .
 
 # Generate Prisma client
-RUN yarn prisma:generate
+RUN npx prisma generate
 
-# Build the application
-RUN yarn build
+# Build NestJS
+RUN npm run build
 
-# Expose port
+
+# ---------- Stage 2: Production ----------
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy only necessary files from builder
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/prisma ./prisma
+
+# Expose port (Railway will override via PORT env)
 EXPOSE 3000
 
-# Start the application
-CMD ["yarn", "start:prod"]
+# Start app
+CMD ["node", "dist/main.js"]
