@@ -19,7 +19,12 @@ ARG DATABASE_URL
 RUN DATABASE_URL=$DATABASE_URL npx prisma generate
 
 # Build NestJS
-RUN npm run build
+RUN echo "Starting build..." && npx nest build || (echo "Build failed with error:" && npx nest build 2>&1 && exit 1)
+
+# Check build output
+RUN echo "Checking dist folder contents:" && ls -la dist/ || (echo "No dist folder created" && exit 1)
+RUN echo "Looking for main.js:" && find . -name "main.js" -type f || (echo "main.js not found anywhere" && exit 1)
+
 
 # ---------- Stage 2: Production ----------
 FROM node:20-alpine
@@ -35,6 +40,9 @@ RUN npm install --omit=dev
 # Copy built app and Prisma files
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
+
+# Verify the copied files
+RUN echo "Verifying copied files:" && ls -la dist/ && test -f dist/main.js || (echo "dist/main.js not found after copy" && exit 1)
 
 # Expose port (Railway will override via PORT env)
 EXPOSE 3000
