@@ -19,7 +19,10 @@ ARG DATABASE_URL
 RUN DATABASE_URL=$DATABASE_URL npx prisma generate
 
 # Build NestJS
-RUN echo "Starting build..." && npx nest build || (echo "Build failed with error:" && npx nest build 2>&1 && exit 1)
+RUN echo "Starting build with NestJS CLI..." && npx nest build
+RUN echo "Build exit code: $?"
+RUN echo "Trying direct TypeScript compilation..." && npx tsc
+RUN echo "TSC exit code: $?"
 
 # Check build output
 RUN echo "Checking dist folder contents:" && ls -la dist/ || (echo "No dist folder created" && exit 1)
