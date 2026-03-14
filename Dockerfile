@@ -1,6 +1,9 @@
 # ---------- Build Stage ----------
 FROM node:20-slim AS builder
 
+ARG DATABASE_URL
+ENV DATABASE_URL=$DATABASE_URL
+
 WORKDIR /app
 
 COPY package*.json ./
@@ -24,9 +27,8 @@ RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
-
-RUN npx prisma generate
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 EXPOSE 3000
 
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
